@@ -26,8 +26,6 @@ TEST_SET_NAME = 'test_set.tfrecords'
 PREDICT_SET_NAME = 'predict_set.tfrecords'
 
 ORIGIN_MERGED_SOURCE_DIRECTORY = '../data_set/my_set/merged_origin_data_set'
-ORIGIN_IMAGE_DIRECTORY = '../data_set/image'
-ORIGIN_LABEL_DIRECTORY = '../data_set/label'
 ORIGIN_PREDICT_DIRECTORY = '../data_set/test'
 # Augmentor.Pipeline的参数'output_directory'有毒，非要绝对路径，只能这样咯
 AUGMENT_OUTPUT_DIRECTORY = "E://myset"
@@ -62,6 +60,9 @@ def tif_merge():
 		img_mer = np.concatenate((gray1,gray1,gray2), axis=-1)
 	#img_mer = np.concatenate((img1,img2), axis=-1)
 	#np.save(file='../data_set/train/merged.tif', arr=img_mer)
+		if not os.path.lexists(ORIGIN_MERGED_SOURCE_DIRECTORY):
+			print("错误:请手动创建合成图片保存路径:'%s\'"%(ORIGIN_MERGED_SOURCE_DIRECTORY))
+			return -1
 		cv2.imwrite(ORIGIN_MERGED_SOURCE_DIRECTORY+'/'+filename, img=img_mer)
 		# cv2.imwrite(filename='../data_set/train/merged0.tif', img=img_mer[:,:,0])
 		# cv2.imwrite(filename='../data_set/train/merged2.tif', img=img_mer[:,:,2])
@@ -109,28 +110,24 @@ def split_merged_augment_data_set():
 def write_img_to_tfrecords():
 	augment_image_path = AUGMENT_IMAGE_PATH
 	augment_label_path = AUGMENT_LABEL_PATH
+	#1.创建一个TFRecordWriter对象, 这个对象就负责写记录到指定的文件中去了.
 	train_set_writer = tf.python_io.TFRecordWriter(os.path.join('../data_set/my_set', TRAIN_SET_NAME))  # 要生成的文件
 	validation_set_writer = tf.python_io.TFRecordWriter(os.path.join('../data_set/my_set', VALIDATION_SET_NAME))
 	test_set_writer = tf.python_io.TFRecordWriter(os.path.join('../data_set/my_set', TEST_SET_NAME))  # 要生成的文件
 	predict_set_writer = tf.python_io.TFRecordWriter(os.path.join('../data_set/my_set', PREDICT_SET_NAME))  # 要生成的文件
 
-	# train_set
+	# 训练集
 	for index in range(TRAIN_SET_SIZE):
+		#读取图像
 		train_image = cv2.imread(os.path.join(augment_image_path, '%d.jpg' % index), flags=0)
 		train_label = cv2.imread(os.path.join(augment_label_path, '%d.jpg' % index), flags=0)
-		# train_image = cv2.resize(src=train_image, dsize=(INPUT_IMG_WIDE, INPUT_IMG_HEIGHT))
-		# train_image = np.asarray(a=train_image, dtype=np.uint8)
+		#归一化
 		train_image = cv2.resize(src=train_image, dsize=(INPUT_IMG_WIDE, INPUT_IMG_HEIGHT))
-		# train_label = np.asarray(a=train_label, dtype=np.uint8)
 		train_label = cv2.resize(src=train_label, dsize=(OUTPUT_IMG_WIDE, OUTPUT_IMG_HEIGHT))
+		#二值化
 		train_label[train_label <= 100] = 0
 		train_label[train_label > 100] = 1
-		# train_image = io.imread(file_path)
-		# train_image = transform.resize(train_image, (INPUT_IMG_WIDE, INPUT_IMG_HEIGHT, INPUT_IMG_CHANNEL))
-		# sample_image = train_image[:, :, 0]
-		# label_image = train_image[:, :, 2]
-		# label_image[label_image < 100] = 0
-		# label_image[label_image > 100] = 10
+		#初始化Features对象, 一般我们是传入一个字典, 字典的键是一个字符串, 表示名字, 字典的值是一个tf.train.Feature对象.
 		example = tf.train.Example(features=tf.train.Features(feature={
 			'label': tf.train.Feature(bytes_list=tf.train.BytesList(value=[train_label.tobytes()])),
 			'image_raw': tf.train.Feature(bytes_list=tf.train.BytesList(value=[train_image.tobytes()]))
@@ -197,8 +194,8 @@ def write_img_to_tfrecords():
 
 	# predict_set
 	for index in range(PREDICT_SET_SIZE):
-		origin_image_path = ORIGIN_IMAGE_DIRECTORY
-		origin_label_path = ORIGIN_LABEL_DIRECTORY
+		origin_image_path = ORIGIN_PREDICT_DIRECTORY
+		origin_label_path = ORIGIN_PREDICT_DIRECTORY
 		predict_image = cv2.imread(os.path.join(origin_image_path, '%d.tif' % index), flags=0)
 		predict_label = cv2.imread(os.path.join(origin_label_path, '%d.tif' % index), flags=0)
 		# predict_image = cv2.resize(src=predict_image, dsize=(INPUT_IMG_WIDE, INPUT_IMG_HEIGHT))
@@ -215,7 +212,7 @@ def write_img_to_tfrecords():
 		# label_image[label_image < 100] = 0
 		# label_image[label_image > 100] = 10
 		example = tf.train.Example(features=tf.train.Features(feature={
-			'label': tf.train.Feature(bytes_list=tf.train.BytesList(value=[predict_label.tobytes()])),
+			'label': tf.train.Feature(bytes_list=tf.train.BytesList(value=[predict_label.tobytes()])),#tf.train.BytesList列表每个元素为string。
 			'image_raw': tf.train.Feature(bytes_list=tf.train.BytesList(value=[predict_image.tobytes()]))
 		}))  # example对象对label和image数据进行封装
 		predict_set_writer.write(example.SerializeToString())  # 序列化为字符串
@@ -248,13 +245,9 @@ if __name__ == '__main__':
 	#1.图像合并，为了增强数据
 	#tif_merge()
 	#2.图像增强
-	augment()
+	#augment()
 	#3.拆分增强后的数据集，拿到训练图像和label图像
 	#split_merged_augment_data_set()
+	#4.将图像转为tfrecord
 	#write_img_to_tfrecords()
-	#write_img_to_tfrecords2()
-	# ORIGIN_SOURCE_DIRECTORY = os.getcwd()
-	# trainmidname = AUGMENT_OUTPUT_DIRECTORY[:AUGMENT_OUTPUT_DIRECTORY.rindex('/')]
-	AUGMENT_OUTPUT_DIRECTORY = \
-		os.getcwd()[:os.getcwd().rindex('/')] + '/data_set/my_set/merged_augment_data_set'
-	# print(AUGMENT_OUTPUT_DIRECTORY)
+	write_img_to_tfrecords2()

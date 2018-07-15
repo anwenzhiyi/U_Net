@@ -20,8 +20,9 @@ import os
 TRAIN_SET_NAME = 'train_set.tfrecords'
 VALIDATION_SET_NAME = 'validation_set.tfrecords'
 TEST_SET_NAME = 'test_set.tfrecords'
-
+TFRECORD_PATH = '../data_set/my_set'
 ORIGIN_PREDICT_DIRECTORY = '../data_set/test'
+MODEL_DIR = '../data_set/model'
 
 INPUT_IMG_WIDE, INPUT_IMG_HEIGHT, INPUT_IMG_CHANNEL = 512, 512, 1
 OUTPUT_IMG_WIDE, OUTPUT_IMG_HEIGHT, OUTPUT_IMG_CHANNEL = 512, 512, 1
@@ -36,7 +37,6 @@ TEST_BATCH_SIZE = 1
 PREDICT_BATCH_SIZE = 1
 PREDICT_SAVED_DIRECTORY = '../data_set/predictions'
 EPS = 10e-5
-FLAGS = None
 CLASS_NUM = 2
 CHECK_POINT_PATH = None
 
@@ -60,132 +60,24 @@ def calculate_unet_input_and_output(bottom=0):
 	print(z)
 
 
-def convert_from_color_segmentation(image_3d=None):
-	import numpy as np
-	from skimage import img_as_ubyte
-	import warnings
-	patterns = {
-		(0, 0, 0):          0,      # 背景
-		(128, 0, 0):        1,      # 飞机
-		(0, 128, 0):        2,      # 自行车
-		(128, 128, 0):      3,      # 鸟
-		(0, 0, 128):        4,      # 船
-		(128, 0, 128):      5,      # 瓶子
-		(0, 128, 128):      6,      # 大巴
-		(128, 128, 128):    7,      # 车
-		(64, 0, 0):         8,      # 猫
-		(192, 0, 0):        9,      # 椅子
-		(64, 128, 0):       10,     # 牛
-		(192, 128, 0):      11,     # 餐桌
-		(64, 0, 128):       12,     # 狗
-		(192, 0, 128):      13,     # 马
-		(64, 128, 128):     14,     # 摩托车
-		(192, 128, 128):    15,     # 人
-		(0, 64, 0):         16,     # 盆栽
-		(128, 64, 0):       17,     # 羊
-		(0, 192, 0):        18,     # 沙发
-		(128, 192, 0):      19,     # 火车
-		(0, 64, 128):       20      # 显示器
-	}
-	with warnings.catch_warnings():
-		warnings.simplefilter("ignore")
-		image_3d = img_as_ubyte(image_3d)
-	image_2d = np.zeros((image_3d.shape[0], image_3d.shape[1]), dtype=np.uint8)
-	for pattern, index in patterns.items():
-		# print(pattern)
-		# print(index)
-		m = (image_3d == np.array(pattern).reshape(1, 1, 3)).all(axis=2)
-		# print(m)
-		image_2d[m] = index
 
-	return image_2d
-
-
-def write_img_to_tfrecords():
-	import cv2
-	# from skimage import io, transform
-	import glob
-	import numpy as np
-	train_set_size = 28
-	validation_set_size = 2
-	path = glob.glob(os.path.join('/home/dufanxin/PycharmProjects/Image-Augmentor/inputdata/image', 'combine0.png'))
-	print(len(path))
-	train_set_writer = tf.python_io.TFRecordWriter(os.path.join(FLAGS.data_dir, TRAIN_SET_NAME))  # 要生成的文件
-	validation_set_writer = tf.python_io.TFRecordWriter(os.path.join(FLAGS.data_dir, VALIDATION_SET_NAME))
-	# test_set_writer = tf.python_io.TFRecordWriter(os.path.join(FLAGS.data_dir, 'test_set.tfrecords'))  # 要生成的文件
-	train_path = path[:10000]
-	validation_path = path[10000:]
-	# print(len(path))
-
-	for index, file_path in enumerate(train_path):
-		train_image = cv2.imread(file_path)
-		# train_image = cv2.resize(src=train_image, dsize=(INPUT_IMG_WIDE, INPUT_IMG_HEIGHT))
-		sample_image = np.asarray(a=train_image[:, :, 0], dtype=np.uint8)
-		sample_image = cv2.resize(src=sample_image, dsize=(INPUT_IMG_WIDE, INPUT_IMG_HEIGHT))
-		label_image = np.asarray(a=train_image[:, :, 2], dtype=np.uint8)
-		label_image = cv2.resize(src=label_image, dsize=(OUTPUT_IMG_WIDE, OUTPUT_IMG_HEIGHT))
-		label_image[label_image <= 100] = 0
-		label_image[label_image > 100] = 1
-		# train_image = io.imread(file_path)
-		# train_image = transform.resize(train_image, (INPUT_IMG_WIDE, INPUT_IMG_HEIGHT, INPUT_IMG_CHANNEL))
-		# sample_image = train_image[:, :, 0]
-		# label_image = train_image[:, :, 2]
-		# label_image[label_image < 100] = 0
-		# label_image[label_image > 100] = 10
-		example = tf.train.Example(features=tf.train.Features(feature={
-			'label': tf.train.Feature(bytes_list=tf.train.BytesList(value=[label_image.tobytes()])),
-			'image_raw': tf.train.Feature(bytes_list=tf.train.BytesList(value=[sample_image.tobytes()]))
-		}))  # example对象对label和image数据进行封装
-		train_set_writer.write(example.SerializeToString())  # 序列化为字符串
-		if index % 100 == 0:
-			print('Done train_set writing %.2f%%' % (index / train_set_size * 100))
-	train_set_writer.close()
-	print("Done train_set writing")
-
-	for index, file_path in enumerate(validation_path):
-		validation_image = cv2.imread(file_path)
-		# validation_image = cv2.resize(src=validation_image, dsize=(INPUT_IMG_WIDE, INPUT_IMG_HEIGHT))
-		sample_image = np.asarray(a=validation_image[:, :, 0], dtype=np.uint8)
-		sample_image = cv2.resize(src=sample_image, dsize=(INPUT_IMG_WIDE, INPUT_IMG_HEIGHT))
-		label_image = np.asarray(validation_image[:, :, 2], dtype=np.uint8)
-		label_image = cv2.resize(src=label_image, dsize=(OUTPUT_IMG_WIDE, OUTPUT_IMG_HEIGHT))
-		label_image[label_image <= 100] = 0
-		label_image[label_image > 100] = 10
-		# validation_image = io.imread(file_path)
-		# validation_image = transform.resize(validation_image, (INPUT_IMG_WIDE, INPUT_IMG_HEIGHT, INPUT_IMG_CHANNEL))
-		# sample_image = validation_image[:, :, 0]
-		# label_image = validation_image[:, :, 2]
-		# label_image[label_image < 100] = 0
-		# label_image[label_image > 100] = 10
-		example = tf.train.Example(features=tf.train.Features(feature={
-			'label': tf.train.Feature(bytes_list=tf.train.BytesList(value=[label_image.tobytes()])),
-			'image_raw': tf.train.Feature(bytes_list=tf.train.BytesList(value=[sample_image.tobytes()]))
-		}))  # example对象对label和image数据进行封装
-		validation_set_writer.write(example.SerializeToString())  # 序列化为字符串
-		if index % 100 == 0:
-			print('Done validation_set writing %.2f%%' % (index / validation_set_size * 100))
-	validation_set_writer.close()
-	print("Done validation_set writing")
 
 
 def read_check_tfrecords():
 	import cv2
-	train_file_path = os.path.join(FLAGS.data_dir, TRAIN_SET_NAME)
-	train_image_filename_queue = tf.train.string_input_producer(
-		string_tensor=tf.train.match_filenames_once(train_file_path), num_epochs=1, shuffle=True)
-	train_images, train_labels = read_image(train_image_filename_queue)
-	# one_hot_labels = tf.to_float(tf.one_hot(indices=train_labels, depth=CLASS_NUM))
-	with tf.Session() as sess:  # 开始一个会话
+	train_file_path = os.path.join(TFRECORD_PATH, TRAIN_SET_NAME)
+	#string_input_producer第一个参数为列表
+	train_image_filename_queue = tf.train.string_input_producer(string_tensor=[train_file_path], num_epochs=1, shuffle=True)
+	train_images, train_labels = read_image(train_image_filename_queue)#从tfrecord文件中读取一个图片显示
+	with tf.Session() as sess:  # 开始一个会话,用来输出图像
 		sess.run(tf.global_variables_initializer())
 		sess.run(tf.local_variables_initializer())
 		coord = tf.train.Coordinator()
 		threads = tf.train.start_queue_runners(coord=coord)
-		example, label = sess.run([train_images, train_labels])
-		example, label = sess.run([train_images, train_labels])
-		cv2.imshow('image', example)
-		cv2.imshow('lael', label * 100)
+		images,labels = sess.run([train_images,train_labels])
+		cv2.imshow('image', images)
+		cv2.imshow('lael', labels * 255)#label中0，1的像素
 		cv2.waitKey(0)
-		# print(sess.run(one_hot_labels))
 		coord.request_stop()
 		coord.join(threads)
 	print("Done reading and checking")
@@ -215,6 +107,7 @@ def read_image(file_queue):
 	# label = tf.decode_raw(features['image_raw'], tf.uint8)
 	# print(label)
 	# label = tf.reshape(label, shape=[1, 4])
+
 	return image, label
 
 
@@ -317,7 +210,7 @@ class Unet:
 			self.keep_prob = tf.placeholder(dtype=tf.float32, name='keep_prob')
 			self.lamb = tf.placeholder(dtype=tf.float32, name='lambda')
 
-		# layer 1
+		# layer1两个卷积加一个池化，1-5都是这样， 输入:515*512,输出256*256
 		with tf.name_scope('layer_1'):
 			# conv_1
 			self.w[1] = self.init_w(shape=[3, 3, INPUT_IMG_CHANNEL, 64], name='w_1')
@@ -344,7 +237,7 @@ class Unet:
 			# dropout
 			result_dropout = tf.nn.dropout(x=result_maxpool, keep_prob=self.keep_prob)
 
-		# layer 2
+		# layer 2，输入：256*256，输出128*128
 		with tf.name_scope('layer_2'):
 			# conv_1
 			self.w[3] = self.init_w(shape=[3, 3, 64, 128], name='w_3')
@@ -371,7 +264,7 @@ class Unet:
 			# dropout
 			result_dropout = tf.nn.dropout(x=result_maxpool, keep_prob=self.keep_prob)
 
-		# layer 3
+		# layer 3，输入：128*128，输出：64*64
 		with tf.name_scope('layer_3'):
 			# conv_1
 			self.w[5] = self.init_w(shape=[3, 3, 128, 256], name='w_5')
@@ -398,7 +291,7 @@ class Unet:
 			# dropout
 			result_dropout = tf.nn.dropout(x=result_maxpool, keep_prob=self.keep_prob)
 
-		# layer 4
+		# layer 4，输入64*64，输出32*32
 		with tf.name_scope('layer_4'):
 			# conv_1
 			self.w[7] = self.init_w(shape=[3, 3, 256, 512], name='w_7')
@@ -416,7 +309,7 @@ class Unet:
 				strides=[1, 1, 1, 1], padding='SAME', name='conv_2')
 			result_relu_2 = tf.nn.relu(tf.nn.bias_add(result_conv_2, self.b[8], name='add_bias'), name='relu_2')
 			self.result_from_contract_layer[4] = result_relu_2  # 该层结果临时保存, 供上采样使用
-
+			print("layer_4:{result_conv_2:%s}"%(str(result_relu_2.shape)))
 			# maxpool
 			result_maxpool = tf.nn.max_pool(
 				value=result_relu_2, ksize=[1, 2, 2, 1],
@@ -425,7 +318,7 @@ class Unet:
 			# dropout
 			result_dropout = tf.nn.dropout(x=result_maxpool, keep_prob=self.keep_prob)
 
-		# layer 5 (bottom)
+		# layer 5 (bottom)，两个卷积加一个反卷积，输入32*32，输出64*64
 		with tf.name_scope('layer_5'):
 			# conv_1
 			self.w[9] = self.init_w(shape=[3, 3, 512, 1024], name='w_9')
@@ -455,12 +348,14 @@ class Unet:
 			# dropout
 			result_dropout = tf.nn.dropout(x=result_relu_3, keep_prob=self.keep_prob)
 
-		# layer 6
+		# layer 6：输入64*64，输出128*128
 		with tf.name_scope('layer_6'):
 			# copy, crop and merge
 			result_merge = self.copy_and_crop_and_merge(
 				result_from_contract_layer=self.result_from_contract_layer[4], result_from_upsampling=result_dropout)
-			# print(result_merge)
+			print(self.result_from_contract_layer[4])
+			print(result_dropout)
+			print(result_merge)
 
 			# conv_1
 			self.w[12] = self.init_w(shape=[3, 3, 1024, 512], name='w_12')
@@ -491,7 +386,7 @@ class Unet:
 			# dropout
 			result_dropout = tf.nn.dropout(x=result_relu_3, keep_prob=self.keep_prob)
 
-		# layer 7
+		# layer 7，输入128*128，输出256*256
 		with tf.name_scope('layer_7'):
 			# copy, crop and merge
 			result_merge = self.copy_and_crop_and_merge(
@@ -524,8 +419,8 @@ class Unet:
 
 			# dropout
 			result_dropout = tf.nn.dropout(x=result_relu_3, keep_prob=self.keep_prob)
-
-		# layer 8
+			print(result_dropout)
+		# layer 8，输入256*256，输出512*512
 		with tf.name_scope('layer_8'):
 			# copy, crop and merge
 			result_merge = self.copy_and_crop_and_merge(
@@ -558,8 +453,8 @@ class Unet:
 
 			# dropout
 			result_dropout = tf.nn.dropout(x=result_relu_3, keep_prob=self.keep_prob)
-
-		# layer 9
+			print(result_dropout)
+		# layer 9,三个卷积层作为最后输出
 		with tf.name_scope('layer_9'):
 			# copy, crop and merge
 			result_merge = self.copy_and_crop_and_merge(
@@ -590,8 +485,8 @@ class Unet:
 			# self.prediction = tf.nn.relu(tf.nn.bias_add(result_conv_3, self.b[23], name='add_bias'), name='relu_3')
 			# self.prediction = tf.nn.sigmoid(x=tf.nn.bias_add(result_conv_3, self.b[23], name='add_bias'), name='sigmoid_1')
 			self.prediction = tf.nn.bias_add(result_conv_3, self.b[23], name='add_bias')
-		# print(self.prediction)
-		# print(self.input_label)
+		print(self.prediction)
+		print(self.input_label)
 
 		# softmax loss
 		with tf.name_scope('softmax_loss'):
@@ -659,9 +554,9 @@ class Unet:
 		# 		)
 		# 	all_parameters_saver.save(sess=sess, save_path=ckpt_path)
 		# print("Done training")
-		train_file_path = os.path.join(FLAGS.data_dir, TRAIN_SET_NAME)
+		train_file_path = os.path.join(TFRECORD_PATH, TRAIN_SET_NAME)
 		train_image_filename_queue = tf.train.string_input_producer(
-			string_tensor=tf.train.match_filenames_once(train_file_path), num_epochs=EPOCH_NUM, shuffle=True)
+			string_tensor=[train_file_path], num_epochs=EPOCH_NUM, shuffle=True)
 		ckpt_path = CHECK_POINT_PATH
 		train_images, train_labels = read_image_batch(train_image_filename_queue, TRAIN_BATCH_SIZE)
 		tf.summary.scalar("loss", self.loss_mean)
@@ -671,17 +566,16 @@ class Unet:
 		with tf.Session() as sess:  # 开始一个会话
 			sess.run(tf.global_variables_initializer())
 			sess.run(tf.local_variables_initializer())
-			summary_writer = tf.summary.FileWriter(FLAGS.tb_dir, sess.graph)
-			tf.summary.FileWriter(FLAGS.model_dir, sess.graph)
+			summary_writer = tf.summary.FileWriter(MODEL_DIR, sess.graph)
 			coord = tf.train.Coordinator()
 			threads = tf.train.start_queue_runners(coord=coord)
 			try:
 				epoch = 1
 				while not coord.should_stop():
 					# Run training steps or whatever
-					# print('epoch ' + str(epoch))
+					print('epoch ' + str(epoch))
 					example, label = sess.run([train_images, train_labels])  # 在会话中取出image和label
-					# print(label)
+					print(label)
 					lo, acc, summary_str = sess.run(
 						[self.loss_mean, self.accuracy, merged_summary],
 						feed_dict={
@@ -689,7 +583,7 @@ class Unet:
 							self.lamb: 0.004}
 					)
 					summary_writer.add_summary(summary_str, epoch)
-					# print('num %d, loss: %.6f and accuracy: %.6f' % (epoch, lo, acc))
+					print('num %d, loss: %.6f and accuracy: %.6f' % (epoch, lo, acc))
 					if epoch % 10 == 0:
 						print('num %d, loss: %.6f and accuracy: %.6f' % (epoch, lo, acc))
 					sess.run(
@@ -863,7 +757,7 @@ class Unet:
 
 def main():
 	net = Unet()
-	CHECK_POINT_PATH = os.path.join(FLAGS.model_dir, "model.ckpt")
+	CHECK_POINT_PATH = os.path.join(MODEL_DIR, "model.ckpt")
 	net.set_up_unet(TRAIN_BATCH_SIZE)
 	net.train()
 	# net.set_up_unet(VALIDATION_BATCH_SIZE)
@@ -874,23 +768,5 @@ def main():
 	# net.predict()
 
 if __name__ == '__main__':
-	parser = argparse.ArgumentParser()
-	# 数据地址
-	parser.add_argument(
-		'--data_dir', type=str, default='../data_set/',
-		help='Directory for storing input data')
-
-	# 模型保存地址
-	parser.add_argument(
-		'--model_dir', type=str, default='../data_set/saved_models',
-		help='output model path')
-
-	# 日志保存地址
-	parser.add_argument(
-		'--tb_dir', type=str, default='../data_set/logs',
-		help='TensorBoard log path')
-
-	FLAGS, _ = parser.parse_known_args()
-	# write_img_to_tfrecords()
-	# read_check_tfrecords()
+	#read_check_tfrecords()#用来检查tfrecord中的数据，显示image和label图像
 	main()
