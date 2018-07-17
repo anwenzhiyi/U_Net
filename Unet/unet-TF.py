@@ -15,15 +15,16 @@
 import tensorflow as tf
 import argparse
 import os
-
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ['CUDA_VISIBLE_DEVICES'] = "0,1"
 
 TRAIN_SET_NAME = 'train_set.tfrecords'
 VALIDATION_SET_NAME = 'validation_set.tfrecords'
 TEST_SET_NAME = 'test_set.tfrecords'
 TFRECORD_PATH = '../data_set/my_set'
 ORIGIN_PREDICT_DIRECTORY = '../data_set/test'
-MODEL_DIR = '../data_set/model'
-
+MODEL_DIR = '../data_set/model/model.ckpt'
+LOG_DIR = '../data_set/logs'
 INPUT_IMG_WIDE, INPUT_IMG_HEIGHT, INPUT_IMG_CHANNEL = 512, 512, 1
 OUTPUT_IMG_WIDE, OUTPUT_IMG_HEIGHT, OUTPUT_IMG_CHANNEL = 512, 512, 1
 TRAIN_SET_SIZE = 8
@@ -38,7 +39,6 @@ PREDICT_BATCH_SIZE = 1
 PREDICT_SAVED_DIRECTORY = '../data_set/predictions'
 EPS = 10e-5
 CLASS_NUM = 2
-CHECK_POINT_PATH = None
 
 
 def calculate_unet_input_and_output(bottom=0):
@@ -557,7 +557,6 @@ class Unet:
 		train_file_path = os.path.join(TFRECORD_PATH, TRAIN_SET_NAME)
 		train_image_filename_queue = tf.train.string_input_producer(
 			string_tensor=[train_file_path], num_epochs=EPOCH_NUM, shuffle=True)
-		ckpt_path = CHECK_POINT_PATH
 		train_images, train_labels = read_image_batch(train_image_filename_queue, TRAIN_BATCH_SIZE)
 		tf.summary.scalar("loss", self.loss_mean)
 		tf.summary.scalar('accuracy', self.accuracy)
@@ -566,41 +565,39 @@ class Unet:
 		with tf.Session() as sess:  # 开始一个会话
 			sess.run(tf.global_variables_initializer())
 			sess.run(tf.local_variables_initializer())
-			summary_writer = tf.summary.FileWriter(MODEL_DIR, sess.graph)
+			summary_writer = tf.summary.FileWriter(LOG_DIR, sess.graph)
 			coord = tf.train.Coordinator()
 			threads = tf.train.start_queue_runners(coord=coord)
+			epoch =0
 			try:
-				epoch = 1
 				while not coord.should_stop():
-					# Run training steps or whatever
-					print('epoch ' + str(epoch))
+						# Run training steps or whatever
+					epoch+=1
 					example, label = sess.run([train_images, train_labels])  # 在会话中取出image和label
-					print(label)
-					lo, acc, summary_str = sess.run(
-						[self.loss_mean, self.accuracy, merged_summary],
-						feed_dict={
-							self.input_image: example, self.input_label: label, self.keep_prob: 1.0,
-							self.lamb: 0.004}
-					)
-					summary_writer.add_summary(summary_str, epoch)
-					print('num %d, loss: %.6f and accuracy: %.6f' % (epoch, lo, acc))
-					if epoch % 10 == 0:
-						print('num %d, loss: %.6f and accuracy: %.6f' % (epoch, lo, acc))
-					sess.run(
-						[self.train_step],
+					#print(label)
+
+					sess.run([self.train_step],
 						feed_dict={
 							self.input_image: example, self.input_label: label, self.keep_prob: 0.6,
 							self.lamb: 0.004}
-					)
-					epoch += 1
+						)
+					if epoch%10==0:
+						lo, acc, summary_str = sess.run(
+						[self.loss_mean, self.accuracy, merged_summary],
+						feed_dict={
+							self.input_image: example, self.input_label: label, self.keep_prob: 1.0,
+							self.lamb: 0.004})
+						summary_writer.add_summary(summary_str, epoch)
+						all_parameters_saver.save(sess=sess, save_path=MODEL_DIR, global_step=epoch)
+
+						print('num %d, loss: %.6f and accuracy: %.6f' % (epoch, lo, acc))
 			except tf.errors.OutOfRangeError:
 				print('Done training -- epoch limit reached')
 			finally:
 				# When done, ask the threads to stop.
-				all_parameters_saver.save(sess=sess, save_path=ckpt_path)
 				coord.request_stop()
 			# coord.request_stop()
-			coord.join(threads)
+		coord.join(threads)
 		print("Done training")
 
 	def validate(self):
@@ -632,9 +629,9 @@ class Unet:
 		# cv2.imwrite(filename=os.path.join(FLAGS.model_dir, 'predict.jpg'), img=image)
 		# print(acc)
 		# print("Done test, predict image has been saved to %s" % (os.path.join(FLAGS.model_dir, 'predict.jpg')))
-		validation_file_path = os.path.join(FLAGS.data_dir, VALIDATION_SET_NAME)
+		validation_file_path = os.path.join('../data_set/my_set', VALIDATION_SET_NAME)
 		validation_image_filename_queue = tf.train.string_input_producer(
-			string_tensor=tf.train.match_filenames_once(validation_file_path), num_epochs=1, shuffle=True)
+			string_tensor=[validation_file_path], num_epochs=1, shuffle=True)
 		ckpt_path = CHECK_POINT_PATH
 		validation_images, validation_labels = read_image_batch(validation_image_filename_queue, VALIDATION_BATCH_SIZE)
 		# tf.summary.scalar("loss", self.loss_mean)
@@ -646,7 +643,7 @@ class Unet:
 			sess.run(tf.local_variables_initializer())
 			# summary_writer = tf.summary.FileWriter(FLAGS.tb_dir, sess.graph)
 			# tf.summary.FileWriter(FLAGS.model_dir, sess.graph)
-			all_parameters_saver.restore(sess=sess, save_path=ckpt_path)
+			all_parameters_saver.restore(sess=sess, save_path=MODEL_DIR)
 			coord = tf.train.Coordinator()
 			threads = tf.train.start_queue_runners(coord=coord)
 			try:
@@ -678,10 +675,10 @@ class Unet:
 
 	def test(self):
 		import cv2
-		test_file_path = os.path.join(FLAGS.data_dir, TEST_SET_NAME)
+		test_file_path = os.path.join('../data_set/my_set', TEST_SET_NAME)
 		test_image_filename_queue = tf.train.string_input_producer(
-			string_tensor=tf.train.match_filenames_once(test_file_path), num_epochs=1, shuffle=True)
-		ckpt_path = CHECK_POINT_PATH
+			string_tensor=[test_file_path], num_epochs=1, shuffle=True)
+		ckpt_path = 'F:/unet/data_set/model/model.ckpt'
 		test_images, test_labels = read_image_batch(test_image_filename_queue, TEST_BATCH_SIZE)
 		# tf.summary.scalar("loss", self.loss_mean)
 		# tf.summary.scalar('accuracy', self.accuracy)
@@ -758,12 +755,12 @@ class Unet:
 def main():
 	net = Unet()
 	CHECK_POINT_PATH = os.path.join(MODEL_DIR, "model.ckpt")
-	net.set_up_unet(TRAIN_BATCH_SIZE)
-	net.train()
-	# net.set_up_unet(VALIDATION_BATCH_SIZE)
-	# net.validate()
-	# net.set_up_unet(TEST_BATCH_SIZE)
-	# net.test()
+	#net.set_up_unet(TRAIN_BATCH_SIZE)
+	#net.train()
+	#net.set_up_unet(VALIDATION_BATCH_SIZE)
+	#net.validate()
+	net.set_up_unet(TEST_BATCH_SIZE)
+	net.test()
 	# net.set_up_unet(PREDICT_BATCH_SIZE)
 	# net.predict()
 
